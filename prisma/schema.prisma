@@ -1,0 +1,448 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ─────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  CUSTOMER
+  RESTAURANT_OWNER
+  DELIVERY_PARTNER
+  ADMIN
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY_FOR_PICKUP
+  PICKED_UP
+  ON_THE_WAY
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CASH_ON_DELIVERY
+  CARD
+  UPI
+  WALLET
+}
+
+enum DeliveryPartnerStatus {
+  AVAILABLE
+  BUSY
+  OFFLINE
+}
+
+enum RestaurantStatus {
+  PENDING_APPROVAL
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+enum VehicleType {
+  BIKE
+  BICYCLE
+  CAR
+  SCOOTER
+}
+
+// ─── User & Auth ────────────────────────────────────────────────────────────
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  phone         String   @unique
+  password_hash String
+  role          UserRole
+  is_verified   Boolean  @default(false)
+  is_active     Boolean  @default(true)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  customer_profile  Customer?
+  restaurant_owner  Restaurant?
+  delivery_partner  DeliveryPartner?
+  refresh_tokens    RefreshToken[]
+  otp_verifications OtpVerification[]
+}
+
+model RefreshToken {
+  id         String   @id @default(uuid())
+  token      String   @unique
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  expires_at DateTime
+  created_at DateTime @default(now())
+}
+
+model OtpVerification {
+  id         String   @id @default(uuid())
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  otp        String
+  purpose    String
+  expires_at DateTime
+  used       Boolean  @default(false)
+  created_at DateTime @default(now())
+}
+
+// ─── Customer ───────────────────────────────────────────────────────────────
+
+model Customer {
+  id         String   @id @default(uuid())
+  user_id    String   @unique
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  first_name String
+  last_name  String
+  avatar     String?
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  addresses Customer_Address[]
+  orders    Order[]
+  cart      Cart?
+  reviews   Review[]
+  wallet    Wallet?
+}
+
+model Customer_Address {
+  id            String   @id @default(uuid())
+  customer_id   String
+  customer      Customer @relation(fields: [customer_id], references: [id], onDelete: Cascade)
+  label         String
+  address_line1 String
+  address_line2 String?
+  city          String
+  state         String
+  pincode       String
+  latitude      Float?
+  longitude     Float?
+  is_default    Boolean  @default(false)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  orders Order[]
+}
+
+// ─── Restaurant ─────────────────────────────────────────────────────────────
+
+model Restaurant {
+  id               String           @id @default(uuid())
+  owner_id         String           @unique
+  owner            User             @relation(fields: [owner_id], references: [id])
+  name             String
+  description      String?
+  cover_image      String?
+  logo             String?
+  phone            String
+  email            String
+  status           RestaurantStatus @default(PENDING_APPROVAL)
+  is_open          Boolean          @default(false)
+  avg_rating       Float            @default(0)
+  total_ratings    Int              @default(0)
+  min_order_amount Float            @default(0)
+  delivery_fee     Float            @default(0)
+  estimated_time   Int
+  created_at       DateTime         @default(now())
+  updated_at       DateTime         @updatedAt
+
+  address         Restaurant_Address?
+  categories      Menu_Category[]
+  menu_items      Menu_Item[]
+  orders          Order[]
+  reviews         Review[]
+  operating_hours Operating_Hours[]
+}
+
+model Restaurant_Address {
+  id            String     @id @default(uuid())
+  restaurant_id String     @unique
+  restaurant    Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+  address_line1 String
+  address_line2 String?
+  city          String
+  state         String
+  pincode       String
+  latitude      Float
+  longitude     Float
+}
+
+model Operating_Hours {
+  id            String     @id @default(uuid())
+  restaurant_id String
+  restaurant    Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+  day_of_week   Int
+  open_time     String
+  close_time    String
+  is_closed     Boolean    @default(false)
+}
+
+model Menu_Category {
+  id            String     @id @default(uuid())
+  restaurant_id String
+  restaurant    Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+  name          String
+  description   String?
+  image_url     String?
+  sort_order    Int        @default(0)
+  is_active     Boolean    @default(true)
+  created_at    DateTime   @default(now())
+
+  items Menu_Item[]
+}
+
+model Menu_Item {
+  id               String        @id @default(uuid())
+  restaurant_id    String
+  restaurant       Restaurant    @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+  category_id      String
+  category         Menu_Category @relation(fields: [category_id], references: [id])
+  name             String
+  description      String?
+  image_url        String?
+  price            Float
+  discounted_price Float?
+  is_veg           Boolean       @default(true)
+  is_available     Boolean       @default(true)
+  preparation_time Int?
+  calories         Int?
+  tags             String[]
+  created_at       DateTime      @default(now())
+  updated_at       DateTime      @updatedAt
+
+  cart_items     Cart_Item[]
+  order_items    Order_Item[]
+  customizations Item_Customization[]
+}
+
+model Item_Customization {
+  id           String    @id @default(uuid())
+  menu_item_id String
+  menu_item    Menu_Item @relation(fields: [menu_item_id], references: [id], onDelete: Cascade)
+  group_name   String
+  is_required  Boolean   @default(false)
+  max_select   Int       @default(1)
+
+  options Customization_Option[]
+}
+
+model Customization_Option {
+  id               String             @id @default(uuid())
+  customization_id String
+  customization    Item_Customization @relation(fields: [customization_id], references: [id], onDelete: Cascade)
+  name             String
+  additional_price Float              @default(0)
+}
+
+// ─── Cart ────────────────────────────────────────────────────────────────────
+
+model Cart {
+  id            String   @id @default(uuid())
+  customer_id   String   @unique
+  customer      Customer @relation(fields: [customer_id], references: [id], onDelete: Cascade)
+  restaurant_id String?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  items Cart_Item[]
+}
+
+model Cart_Item {
+  id               String    @id @default(uuid())
+  cart_id          String
+  cart             Cart      @relation(fields: [cart_id], references: [id], onDelete: Cascade)
+  menu_item_id     String
+  menu_item        Menu_Item @relation(fields: [menu_item_id], references: [id])
+  quantity         Int       @default(1)
+  special_note     String?
+  selected_options Json?
+  unit_price       Float
+
+  @@unique([cart_id, menu_item_id])
+}
+
+// ─── Order & Payment ─────────────────────────────────────────────────────────
+
+model Order {
+  id                   String           @id @default(uuid())
+  customer_id          String
+  customer             Customer         @relation(fields: [customer_id], references: [id])
+  restaurant_id        String
+  restaurant           Restaurant       @relation(fields: [restaurant_id], references: [id])
+  delivery_address_id  String
+  delivery_address     Customer_Address @relation(fields: [delivery_address_id], references: [id])
+  status               OrderStatus      @default(PENDING)
+  total_amount         Float
+  discount_amount      Float            @default(0)
+  delivery_fee         Float
+  tax_amount           Float            @default(0)
+  grand_total          Float
+  special_instructions String?
+  estimated_delivery_at DateTime?
+  created_at           DateTime         @default(now())
+  updated_at           DateTime         @updatedAt
+
+  items          Order_Item[]
+  payment        Payment?
+  delivery       Delivery?
+  status_history Order_Status_History[]
+  review         Review?
+}
+
+model Order_Item {
+  id               String    @id @default(uuid())
+  order_id         String
+  order            Order     @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  menu_item_id     String
+  menu_item        Menu_Item @relation(fields: [menu_item_id], references: [id])
+  name             String
+  quantity         Int
+  unit_price       Float
+  total_price      Float
+  selected_options Json?
+}
+
+model Order_Status_History {
+  id         String      @id @default(uuid())
+  order_id   String
+  order      Order       @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  status     OrderStatus
+  note       String?
+  changed_at DateTime    @default(now())
+}
+
+model Payment {
+  id               String        @id @default(uuid())
+  order_id         String        @unique
+  order            Order         @relation(fields: [order_id], references: [id])
+  method           PaymentMethod
+  status           PaymentStatus @default(PENDING)
+  amount           Float
+  transaction_id   String?
+  gateway_response Json?
+  paid_at          DateTime?
+  created_at       DateTime      @default(now())
+  updated_at       DateTime      @updatedAt
+}
+
+// ─── Delivery ────────────────────────────────────────────────────────────────
+
+model DeliveryPartner {
+  id               String                @id @default(uuid())
+  user_id          String                @unique
+  user             User                  @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  first_name       String
+  last_name        String
+  avatar           String?
+  phone            String
+  vehicle_type     VehicleType
+  vehicle_number   String
+  license_number   String
+  status           DeliveryPartnerStatus @default(OFFLINE)
+  is_verified      Boolean               @default(false)
+  is_active        Boolean               @default(true)
+  avg_rating       Float                 @default(0)
+  total_deliveries Int                   @default(0)
+  current_lat      Float?
+  current_lng      Float?
+  created_at       DateTime              @default(now())
+  updated_at       DateTime              @updatedAt
+
+  documents  Partner_Document[]
+  deliveries Delivery[]
+  wallet     Wallet?
+  earnings   Earning[]
+}
+
+model Partner_Document {
+  id         String          @id @default(uuid())
+  partner_id String
+  partner    DeliveryPartner @relation(fields: [partner_id], references: [id], onDelete: Cascade)
+  type       String
+  file_url   String
+  verified   Boolean         @default(false)
+  created_at DateTime        @default(now())
+}
+
+model Delivery {
+  id             String           @id @default(uuid())
+  order_id       String           @unique
+  order          Order            @relation(fields: [order_id], references: [id])
+  partner_id     String?
+  partner        DeliveryPartner? @relation(fields: [partner_id], references: [id])
+  assigned_at    DateTime?
+  picked_up_at   DateTime?
+  delivered_at   DateTime?
+  distance_km    Float?
+  partner_rating Float?
+  partner_note   String?
+  created_at     DateTime         @default(now())
+  updated_at     DateTime         @updatedAt
+}
+
+// ─── Reviews & Wallet ────────────────────────────────────────────────────────
+
+model Review {
+  id            String     @id @default(uuid())
+  customer_id   String
+  customer      Customer   @relation(fields: [customer_id], references: [id])
+  restaurant_id String
+  restaurant    Restaurant @relation(fields: [restaurant_id], references: [id])
+  order_id      String     @unique
+  order         Order      @relation(fields: [order_id], references: [id])
+  rating        Int
+  comment       String?
+  image_urls    String[]
+  created_at    DateTime   @default(now())
+}
+
+model Wallet {
+  id          String           @id @default(uuid())
+  customer_id String?          @unique
+  customer    Customer?        @relation(fields: [customer_id], references: [id])
+  partner_id  String?          @unique
+  partner     DeliveryPartner? @relation(fields: [partner_id], references: [id])
+  balance     Float            @default(0)
+  created_at  DateTime         @default(now())
+  updated_at  DateTime         @updatedAt
+
+  transactions Wallet_Transaction[]
+}
+
+model Wallet_Transaction {
+  id           String   @id @default(uuid())
+  wallet_id    String
+  wallet       Wallet   @relation(fields: [wallet_id], references: [id])
+  amount       Float
+  type         String
+  description  String
+  reference_id String?
+  created_at   DateTime @default(now())
+}
+
+model Earning {
+  id         String          @id @default(uuid())
+  partner_id String
+  partner    DeliveryPartner @relation(fields: [partner_id], references: [id])
+  order_id   String
+  amount     Float
+  is_paid    Boolean         @default(false)
+  paid_at    DateTime?
+  created_at DateTime        @default(now())
+}
